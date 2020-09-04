@@ -863,10 +863,17 @@ class JobArguments(object):
         Returns the list of encoded job arguments. The order of this list corresponds to the
         arguments expected by the job wrapper script.
         """
+        # quick fix: change parameter encoding to "--param='value'" format
+        assert(len(self.task_params) % 2 == 0)
+        task_params = [
+            "{}='{}'".format(self.task_params[2 * i], self.task_params[2 * i + 1])
+            for i in range(len(self.task_params) / 2)
+        ]
+
         return [
             self.task_cls.__module__,
             self.task_cls.__name__,
-            self.encode_params(self.task_params),
+            self.encode_params(task_params),
             self.encode_list(self.branches),
             self.encode_bool(self.auto_retry),
             self.encode_list(self.dashboard_data),
