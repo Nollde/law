@@ -855,7 +855,14 @@ class JobArguments(object):
         Encodes a list of command line parameters *params* into a string via
         :py:func:`law.util.quote_cmd` followed by base64 encoding.
         """
-        encoded = base64.b64encode(six.b(quote_cmd(params) or "-"))
+        # quick fix: change parameter encoding to "--param='value'" format
+        assert(len(params) % 2 == 0)
+        params = [
+            "{}={}".format(params[2 * i], quote_cmd([params[2 * i + 1]]))
+            for i in range(len(params) / 2)
+        ]
+
+        encoded = base64.b64encode(six.b(" ".join(params) or "-"))
         return encoded.decode("utf-8") if six.PY3 else encoded
 
     def get_args(self):
@@ -863,17 +870,10 @@ class JobArguments(object):
         Returns the list of encoded job arguments. The order of this list corresponds to the
         arguments expected by the job wrapper script.
         """
-        # quick fix: change parameter encoding to "--param='value'" format
-        assert(len(self.task_params) % 2 == 0)
-        task_params = [
-            "{}='{}'".format(self.task_params[2 * i], self.task_params[2 * i + 1])
-            for i in range(len(self.task_params) / 2)
-        ]
-
         return [
             self.task_cls.__module__,
             self.task_cls.__name__,
-            self.encode_params(task_params),
+            self.encode_params(self.task_params),
             self.encode_list(self.branches),
             self.encode_bool(self.auto_retry),
             self.encode_list(self.dashboard_data),
