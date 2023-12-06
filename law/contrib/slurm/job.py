@@ -288,14 +288,15 @@ class SlurmJobManager(BaseJobManager):
 class SlurmJobFileFactory(BaseJobFileFactory):
 
     config_attrs = BaseJobFileFactory.config_attrs + [
-        "file_name", "command", "executable", "arguments", "shell", "input_files", "job_name",
-        "partition", "stdout", "stderr", "postfix_output_files", "custom_content", "absolute_paths",
+        "file_name", "command", "executable", "arguments", "shell", "input_files", "output_files",
+        "job_name", "partition", "stdout", "stderr", "postfix_output_files", "custom_content",
+        "absolute_paths",
     ]
 
     def __init__(self, file_name="slurm_job.sh", command=None, executable=None, arguments=None,
-            shell="bash", input_files=None, job_name=None, partition=None, stdout="stdout.txt",
-            stderr="stderr.txt", postfix_output_files=True, custom_content=None,
-            absolute_paths=False, **kwargs):
+            shell="bash", input_files=None, output_files=None, job_name=None, partition=None,
+            stdout="stdout.txt", stderr="stderr.txt", postfix_output_files=True,
+            custom_content=None, absolute_paths=False, **kwargs):
         # get some default kwargs from the config
         cfg = Config.instance()
         if kwargs.get("dir") is None:
@@ -316,6 +317,7 @@ class SlurmJobFileFactory(BaseJobFileFactory):
         self.arguments = arguments
         self.shell = shell
         self.input_files = input_files or {}
+        self.output_files = output_files or []
         self.job_name = job_name
         self.partition = partition
         self.stdout = stdout
