@@ -3,7 +3,7 @@ FROM centos:8
 ARG TARGETPLATFORM
 
 # labels
-LABEL law.version="0.1.16"
+LABEL law_version="0.1.18"
 LABEL law.image-name="riga/law"
 LABEL law.image-tag="c8-py37"
 LABEL law.image-os="centos8"
@@ -77,6 +77,7 @@ RUN rm -rf /root/install
 RUN git clone --recursive https://github.com/riga/law "${LAW_IMAGE_ROOT}" && \
     cd "${LAW_IMAGE_ROOT}" && \
     pip install --no-cache-dir -r requirements.txt -r requirements_dev.txt && \
+    pip install --no-cache-dir mypy && \
     pip install --no-cache-dir .
 WORKDIR ${LAW_IMAGE_ROOT}
 

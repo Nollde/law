@@ -12,6 +12,8 @@ import uuid
 from abc import abstractmethod
 from collections import OrderedDict
 
+import six
+
 import law
 from law.config import Config
 from law.workflow.remote import BaseRemoteWorkflow, BaseRemoteWorkflowProxy
@@ -99,12 +101,12 @@ class CrabWorkflowProxy(BaseRemoteWorkflowProxy):
             task.exclude_params_workflow |
             task.exclude_params_remote_workflow |
             task.exclude_params_crab_workflow |
-            {"workflow"}
+            {"workflow", "effective_workflow"}
         )
         proxy_cmd = ProxyCommand(
             task.as_branch(),
             exclude_task_args=exclude_args,
-            exclude_global_args=["workers"],
+            exclude_global_args=["workers", task.task_family + "-*"],
         )
         proxy_cmd.add_arg("--local-scheduler", "True", overwrite=True)
         for key, value in OrderedDict(task.crab_cmdline_args()).items():
@@ -160,7 +162,7 @@ class CrabWorkflowProxy(BaseRemoteWorkflowProxy):
             c.custom_log_file = log_file
 
         # task hook
-        c = task.crab_job_config(c, submit_jobs)
+        c = task.crab_job_config(c, list(submit_jobs.keys()), list(submit_jobs.values()))
 
         # build the job file and get the sanitized config
         job_file, c = self.job_file_factory(**c.__dict__)
@@ -318,9 +320,26 @@ class CrabWorkflow(BaseRemoteWorkflow):
         """
         Hook to configure how the underlying job file factory is instantiated and configured.
         """
+        # get the file factory cls
+        factory_cls = self.crab_job_file_factory_cls()
+
         # job file fectory config priority: kwargs > class defaults
         kwargs = merge_dicts({}, self.crab_job_file_factory_defaults, kwargs)
-        return self.crab_job_file_factory_cls()(**kwargs)
+
+        # default mkdtemp value which might require task-level info
+        if kwargs.get("mkdtemp") is None:
+            cfg = Config.instance()
+            mkdtemp = cfg.get_expanded(
+                "job",
+                cfg.find_option("job", "crab_job_file_dir_mkdtemp", "job_file_dir_mkdtemp"),
+            )
+            if isinstance(mkdtemp, six.string_types) and mkdtemp.lower() not in {"true", "false"}:
+                kwargs["mkdtemp"] = factory_cls._expand_template_path(
+                    mkdtemp,
+                    variables={"task_id": self.live_task_id, "task_family": self.task_family},
+                )
+
+        return factory_cls(**kwargs)
 
     def crab_job_config(self, config, submit_jobs):
         """

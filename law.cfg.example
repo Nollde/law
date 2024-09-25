@@ -256,7 +256,7 @@
 ; Default: "local_fs"
 
 ; tmp_dir
-; Description:: The directory in which temporary local targets are stored.
+; Description: The directory in which temporary local targets are stored.
 ; Type: string
 ; Default: "$LAW_TARGET_TMP_DIR", "tempfile.gettempdir()"
 
@@ -763,10 +763,13 @@
 ; Default: "$LAW_JOB_FILE_DIR", "tempfile.gettempdir()"
 
 ; job_file_dir_mkdtemp
-; Description: A boolean flag that decides if a temporary directory inside job_file_dir should be
-; created in which the actual job files are stored. It is recommended to set this option to "True"
-; in order to have a clear separation between files created by different job file factories.
-; Type: boolean
+; Description: A boolean flag or string that decides if a temporary directory inside job_file_dir
+; should be created in which the actual job files are stored. It is discouraged to set this option
+; to "False" in order to have a clear separation between files created by different job file
+; factories. When a string is used it serves as a prefix for name of the temporary directory. More
+; than three X's will be replaced with random characters and template variables "{{task_id}}" and
+; "{{task_family}}" will be expanded with task values.
+; Type: boolean, string
 ; Default: True
 
 ; job_file_dir_cleanup
@@ -844,9 +847,17 @@
 ; values above are used. The only exception is "htcondor_job_file_dir_cleanup" whose default value
 ; is False.
 
+; htcondor_job_grouping_submit
+; Description: Whether to use job grouping (cluster submission in HTCondor nomenclature) or not. If
+; not, the standard batched submission is used and settings such as "htcondor_chunk_size_submit" and
+; "htcondor_merge_job_files" are considered.
+; Type: boolean
+; Default: True
+
 ; htcondor_chunk_size_submit
 ; Description: Number of jobs that can be submitted in parallel inside a single call to
-; "law.htcondor.HTCondorJobManager.submit", i.e., in a single "condor_submit" command.
+; "law.htcondor.HTCondorJobManager.submit", i.e., in a single "condor_submit" command. Ignored when
+; job grouping is enabled in "htcondor_job_grouping_submit".
 ; Type: integer
 ; Default: 25
 
@@ -864,8 +875,9 @@
 
 ; htcondor_merge_job_files
 ; Description: A boolean flag that decides whether multiple job description files should be merged
-; into a single file before submission. When "False", the "htcondor_chunk_size_submit" option is
-; not considered either.
+; into a single file before submission. Ignored when job grouping is enabled in
+; "htcondor_job_grouping_submit". When "False", the "htcondor_chunk_size_submit" option is not
+; considered either.
 ; Type: boolean
 ; Default: True
 

@@ -12,7 +12,9 @@ from abc import abstractmethod
 from collections import OrderedDict
 
 import luigi
+import six
 
+from law.config import Config
 from law.workflow.remote import BaseRemoteWorkflow, BaseRemoteWorkflowProxy
 from law.job.base import JobArguments, JobInputFile
 from law.task.proxy import ProxyCommand
@@ -66,12 +68,12 @@ class SlurmWorkflowProxy(BaseRemoteWorkflowProxy):
             task.exclude_params_workflow |
             task.exclude_params_remote_workflow |
             task.exclude_params_slurm_workflow |
-            {"workflow"}
+            {"workflow", "effective_workflow"}
         )
         proxy_cmd = ProxyCommand(
             task.as_branch(branches[0]),
             exclude_task_args=exclude_args,
-            exclude_global_args=["workers", "local-scheduler"],
+            exclude_global_args=["workers", "local-scheduler", task.task_family + "-*"],
         )
         if task.slurm_use_local_scheduler():
             proxy_cmd.add_arg("--local-scheduler", "True", overwrite=True)
@@ -131,6 +133,13 @@ class SlurmWorkflowProxy(BaseRemoteWorkflowProxy):
         # task arguments
         if task.slurm_partition and task.slurm_partition != NO_STR:
             c.partition = task.slurm_partition
+
+        # custom tmp dir since slurm uses the job submission dir as the main job directory, and law
+        # puts the tmp directory in this job directory which might become quite long; then,
+        # python's default multiprocessing puts socket files into that tmp directory which comes
+        # with the restriction of less then 80 characters that would be violated, and potentially
+        # would also overwhelm the submission directory
+        c.render_variables["law_job_tmp"] = "/tmp/law_$( basename \"$LAW_JOB_HOME\" )"
 
         # task hook
         c = task.slurm_job_config(c, job_num, branches)
@@ -212,9 +221,26 @@ class SlurmWorkflow(BaseRemoteWorkflow):
         return SlurmJobFileFactory
 
     def slurm_create_job_file_factory(self, **kwargs):
+        # get the file factory cls
+        factory_cls = self.slurm_job_file_factory_cls()
+
         # job file fectory config priority: kwargs > class defaults
         kwargs = merge_dicts({}, self.slurm_job_file_factory_defaults, kwargs)
-        return self.slurm_job_file_factory_cls()(**kwargs)
+
+        # default mkdtemp value which might require task-level info
+        if kwargs.get("mkdtemp") is None:
+            cfg = Config.instance()
+            mkdtemp = cfg.get_expanded(
+                "job",
+                cfg.find_option("job", "slurm_job_file_dir_mkdtemp", "job_file_dir_mkdtemp"),
+            )
+            if isinstance(mkdtemp, six.string_types) and mkdtemp.lower() not in {"true", "false"}:
+                kwargs["mkdtemp"] = factory_cls._expand_template_path(
+                    mkdtemp,
+                    variables={"task_id": self.live_task_id, "task_family": self.task_family},
+                )
+
+        return factory_cls(**kwargs)
 
     def slurm_job_config(self, config, job_num, branches):
         return config

@@ -210,10 +210,6 @@ class ForestMerge(LocalWorkflow):
         self._merge_forest = None
         self._leaves_per_tree = None
 
-        # the merge factor should not be 1
-        if self.merge_factor == 1:
-            raise ValueError("merge factor must not be 1")
-
         # modify_param_values prevents the forest from being a workflow, but still check
         if self.is_forest() and self.is_workflow():
             raise Exception("merge forest must not be a workflow, {} misconfigured".format(self))
@@ -550,14 +546,15 @@ class ForestMerge(LocalWorkflow):
         inputs = list(self.trace_merge_inputs(inputs) if self.is_leaf() else inputs.values())
 
         # merge
+        node_position = (self.tree_index,) + self.branch_data
         self.publish_message(
-            "start merging {} inputs of node {}".format(len(inputs), self.branch_data),
+            "start merging {} inputs of node {}".format(len(inputs), node_position),
         )
         self.merge(inputs, self.output())
 
         # remove intermediate nodes
         if not self.is_leaf() and not self.keep_nodes:
-            msg = "removing intermediate results of node {}".format(self.branch_data)
+            msg = "removing intermediate results of node {}".format(node_position)
             with self.publish_step(msg):
                 for inp in flatten(inputs):
                     inp.remove()

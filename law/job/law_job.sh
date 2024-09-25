@@ -129,6 +129,15 @@ law_job() {
     # helper functions
     #
 
+    _law_exe_exists() {
+        command -v "$1" &> /dev/null
+    }
+
+    _law_python() {
+        # forward to python if it exists, otherwise to python3
+        _law_exe_exists python && python "$@" || python3 "$@"
+    }
+
     _law_job_line() {
         local n="${1:-100}"
         local c="${2:--}"
@@ -168,7 +177,7 @@ law_job() {
         fi
 
         # function existing?
-        if command -v "${name}" &> /dev/null; then
+        if _law_exe_exists "${name}"; then
             eval "${name}" "${args}"
         else
             >&2 echo "function '${name}' does not exist, skip"
@@ -375,7 +384,7 @@ law_job() {
     _law_job_subsection "host infos"
     echo "> uname -a"
     uname -a
-    if command -v lsb_release &> /dev/null; then
+    if _law_exe_exists lsb_release; then
         echo
         echo "> lsb_release -a"
         lsb_release -a
@@ -384,7 +393,7 @@ law_job() {
         echo "> cat /etc/lsb-release"
         cat /etc/lsb-release
     fi
-    if command -v hostnamectl &> /dev/null; then
+    if _law_exe_exists hostnamectl; then
         echo
         echo "> hostnamectl status"
         hostnamectl status
@@ -395,11 +404,11 @@ law_job() {
     _law_job_subsection "job infos"
     echo "shell    : ${SHELL}"
     echo "hostname : $( hostname )"
-    echo "python   : $( 2>&1 python --version ) from $( which python )"
-    echo "python3  : $( 2>&1 python3 --version ) from $( which python3 )"
+    echo "python   : $( _law_exe_exists python && echo "$( 2>&1 python --version ) from $( which python )" || echo "missing"  )"
+    echo "python3  : $( _law_exe_exists python3 && echo "$( 2>&1 python3 --version ) from $( which python3 )" || echo "missing"  )"
     echo "init dir : ${LAW_JOB_INIT_DIR}"
     echo "job home : ${LAW_JOB_HOME}"
-    echo "tmp dir  : $( python -c "from tempfile import gettempdir; print(gettempdir())" )"
+    echo "tmp dir  : $( _law_python -c "from tempfile import gettempdir; print(gettempdir())" )"
     echo "user home: ${HOME}"
     echo "pwd      : $( pwd )"
     echo "script   : $0"
@@ -447,7 +456,6 @@ law_job() {
     fi
 
     # handle input file rendering
-    local render_ret
     render_variables="$( echo "${render_variables}" | base64 --decode )"
     if [ "${#input_files_render[@]}" != "0" ] && [ ! -z "${render_variables}" ] && [ "${render_variables}" != "-" ]; then
         echo
@@ -464,14 +472,16 @@ law_job() {
             [ "${input_file_render:0:1}" != "/" ] && input_file_render="${LAW_JOB_INIT_DIR}/${input_file_render}"
             # render
             echo "render ${input_file_render}"
-            python -c "\
-import re;\
-repl = ${render_variables};\
-content = open('${input_file_render}', 'r').read();\
-content = re.sub(r'\{\{(\w+)\}\}', lambda m: repl.get(m.group(1), ''), content);\
-open('${input_file_render_base}', 'w').write(content);\
-"
-            render_ret="$?"
+            cat > _render.py << EOT
+import re
+repl = ${render_variables}
+content = open('${input_file_render}', 'r').read()
+content = re.sub(r'\{\{(\w+)\}\}', lambda m: repl.get(m.group(1), ''), content)
+open('${input_file_render_base}', 'w').write(content)
+EOT
+            _law_python _render.py
+            local render_ret="$?"
+            rm -f _render.py
             # handle rendering errors
             if [ "${render_ret}" != "0" ]; then
                 >&2 echo "input file rendering failed (exit code ${render_ret}), stop job"
@@ -542,6 +552,7 @@ open('${input_file_render_base}', 'w').write(content);\
 
     echo
     _law_job_subsection "execute attempt 1"
+    export LAW_JOB_ATTEMPT="1"
     date +"%d/%m/%Y %T.%N (%Z)"
     eval "${cmd}"
     law_ret="$?"
@@ -551,6 +562,7 @@ open('${input_file_render_base}', 'w').write(content);\
     if [ "${law_ret}" != "0" ] && [ "${LAW_JOB_AUTO_RETRY}" = "yes" ]; then
         echo
         _law_job_subsection "execute attempt 2"
+        export LAW_JOB_ATTEMPT="2"
         date +"%d/%m/%Y %T.%N (%Z)"
         eval "${cmd}"
         law_ret="$?"
@@ -591,10 +603,10 @@ start_law_job() {
             law_job "$@"
         elif command -v tee &> /dev/null; then
             set -o pipefail
-            echo -e "" > "${log_file}"
+            echo "---" >> "${log_file}"
             law_job "$@" 2>&1 | tee -a "${log_file}"
         else
-            echo -e "" > "${log_file}"
+            echo "---" >> "${log_file}"
             law_job "$@" &>> "${log_file}"
         fi
     fi

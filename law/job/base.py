@@ -28,6 +28,7 @@ from law.target.file import get_scheme, get_path
 from law.target.remote.base import RemoteTarget
 from law.util import (
     colored, make_list, make_tuple, iter_chunks, makedirs, create_hash, empty_context,
+    create_random_string,
 )
 from law.logger import get_logger
 
@@ -111,41 +112,63 @@ class BaseJobManager(six.with_metaclass(ABCMeta, object)):
         A dictionary that defines to coloring styles per job status that is used in
         :py:meth:`status_line`.
 
-    .. py:classattribute:: job_grouping
+    .. py:classattribute:: job_grouping_submit
 
         type: bool
 
-        Whether this manager implementation groups jobs into single interactions for submission and
-        status queries. In general, this means that the submission of a single job file can result
-        in multiple jobs on the remote batch system.
+        Whether this manager implementation groups jobs into single interactions for submission. In
+        general, this means that the submission of a single job file can result in multiple jobs on
+        the remote batch system.
+
+    .. py:classattribute:: job_grouping_cancel
+
+        type: bool
+
+        Whether this manager implementation groups jobs into single interactions for cancelling
+        jobs.
+
+    .. py:classattribute:: job_grouping_cleanup
+
+        type: bool
+
+        Whether this manager implementation groups jobs into single interactions for cleaning up
+        jobs.
+
+    .. py:classattribute:: job_grouping_query
+
+        type: bool
+
+        Whether this manager implementation groups jobs into single interactions for querying job
+        statuses.
 
     .. py:classattribute:: chunk_size_submit
 
         type: int
 
-        The default chunk size value when no value is given in :py:meth:`submit_batch`. When the
-        value evaluates to *False*, no chunking is allowed.
+        The default chunk size value when no value is given in :py:meth:`submit_batch`. If the value
+        evaluates to *False*, no chunking is allowed.
+
 
     .. py:classattribute:: chunk_size_cancel
 
         type: int
 
-        The default chunk size value when no value is given in :py:meth:`cancel_batch`. When the
-        value evaluates to *False*, no chunking is allowed.
+        The default chunk size value when no value is given in :py:meth:`cancel_batch`. If the value
+        evaluates to *False*, no chunking is allowed.
 
     .. py:classattribute:: chunk_size_cleanup
 
         type: int
 
-        The default chunk size value when no value is given in :py:meth:`cleanup_batch`. When the
+        The default chunk size value when no value is given in :py:meth:`cleanup_batch`. If the
         value evaluates to *False*, no chunking is allowed.
 
     .. py:classattribute:: chunk_size_query
 
         type: int
 
-        The default chunk size value when no value is given in :py:meth:`query_batch`. When the
-        value evaluates to *False*, no chunking is allowed.
+        The default chunk size value when no value is given in :py:meth:`query_batch`. If the value
+        evaluates to *False*, no chunking is allowed.
     """
 
     PENDING = "pending"
@@ -165,8 +188,11 @@ class BaseJobManager(six.with_metaclass(ABCMeta, object)):
         FAILED: ({}, {}, {"color": "red", "style": "bright"}),
     }
 
-    # job grouping settings
-    job_grouping = False
+    # job grouping settings per method
+    job_grouping_submit = False
+    job_grouping_cancel = False
+    job_grouping_cleanup = False
+    job_grouping_query = False
 
     # chunking settings for unbatched methods
     # disabled by default
@@ -238,10 +264,10 @@ class BaseJobManager(six.with_metaclass(ABCMeta, object)):
     def group_job_ids(self, job_ids):
         """
         Hook that needs to be implemented if the job mananger supports grouping of jobs, i.e., when
-        :py:attr:`job_grouping` is *True*, and potentially used during status queries, job
-        cancellation and removal. If so, it should take a sequence of *job_ids* and return a
-        dictionary mapping ids of group jobs (used for queries etc) to the corresponding lists of
-        original job ids, with an arbitrary grouping mechanism.
+        :py:attr:`job_grouping_submit`, :py:attr:`job_grouping_query`, etc. is *True*, and
+        potentially used during status queries, job cancellation and removal. If so, it should take
+        a sequence of *job_ids* and return a dictionary mapping ids of group jobs (used for queries
+        etc) to the corresponding lists of original job ids, with an arbitrary grouping mechanism.
         """
         raise NotImplementedError(
             "internal error, {}.group_job_ids not implemented".format(self.__class__.__name__),
@@ -749,7 +775,7 @@ class BaseJobFileFactory(six.with_metaclass(ABCMeta, object)):
         self.cleanup = cleanup
 
         # when dir ist None, a temporary directory is forced
-        if not dir:
+        if not dir and not mkdtemp:
             mkdtemp = True
 
         # store the directory, default to the job.job_file_dir config
@@ -761,7 +787,8 @@ class BaseJobFileFactory(six.with_metaclass(ABCMeta, object)):
 
         # check if it should be extended by a temporary dir
         if mkdtemp:
-            self.dir = tempfile.mkdtemp(dir=self.dir)
+            prefix = mkdtemp if isinstance(mkdtemp, six.string_types) else None
+            self.dir = tempfile.mkdtemp(dir=self.dir, prefix=prefix)
 
         # store attributes
         self.render_variables = render_variables or {}
@@ -937,6 +964,20 @@ class BaseJobFileFactory(six.with_metaclass(ABCMeta, object)):
 
         with open(dst, "w") as f:
             f.write(content)
+
+    @classmethod
+    def _expand_template_path(cls, path, variables=None):
+        # replace more than three X's with random characters
+        if "XXX" in path:
+            repl = lambda m: create_random_string(l=len(m.group(1)))
+            path = re.sub("(X{3,})", repl, path)
+
+        # replace variables
+        if variables:
+            for key, value in variables.items():
+                path = cls.render_string(path, key, value)
+
+        return path
 
     def provide_input(self, src, postfix=None, dir=None, render_variables=None,
             skip_existing=False):

@@ -157,7 +157,7 @@ class TargetCollection(Target):
 
         # simple counting with early stopping criteria for both success and fail cases
         n = 0
-        for i, targets in enumerate(self.iter_existing(**kwargs)):
+        for i, _ in enumerate(self.iter_existing(**kwargs)):
             n += 1
 
             # check for early success
@@ -316,9 +316,8 @@ class SiblingFileCollection(SiblingFileCollectionBase):
 
         # check that targets are in fact located in the same directory
         for t in flatten_collections(self._flat_target_list):
-            if t.dirname != self.dir.path:
-                raise Exception("{} {} is not located in common directory {}".format(
-                    t.__class__.__name__, t, self.dir))
+            if t.absdirname != self.dir.abspath:
+                raise Exception("{} is not located in common directory {}".format(t, self.dir))
 
     def _repr_pairs(self):
         expand = Config.instance().get_expanded_bool("target", "expand_path_repr")

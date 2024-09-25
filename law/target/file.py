@@ -193,7 +193,7 @@ class FileSystemTarget(Target, shims.FileSystemTarget):
         return self.fs.dirname(self.path)
 
     @property
-    def abs_dirname(self):
+    def absdirname(self):
         return self.fs.dirname(self.abspath)
 
     @property
@@ -234,6 +234,10 @@ class FileSystemTarget(Target, shims.FileSystemTarget):
 
     def chmod(self, perm, silent=False, **kwargs):
         self.fs.chmod(self.path, perm, silent=silent, **kwargs)
+
+    def makedirs(self, *args, **kwargs):
+        parent = self.parent
+        return None if parent is None else parent.touch(*args, **kwargs)
 
     @abstractproperty
     def fs(self):
@@ -318,7 +322,7 @@ class FileSystemFileTarget(FileSystemTarget):
 
     def copy_from(self, src, perm=None, dir_perm=None, **kwargs):
         if isinstance(src, FileSystemFileTarget):
-            return src.copy_to(self.path, perm=perm, dir_perm=dir_perm, **kwargs)
+            return src.copy_to(self.abspath, perm=perm, dir_perm=dir_perm, **kwargs)
 
         # when src is a plain string, let the fs handle it
         # TODO: complain when src not local? forward to copy_to request depending on protocol?
@@ -330,7 +334,7 @@ class FileSystemFileTarget(FileSystemTarget):
 
     def move_from(self, src, perm=None, dir_perm=None, **kwargs):
         if isinstance(src, FileSystemFileTarget):
-            return src.move_from(self.path, perm=perm, dir_perm=dir_perm, **kwargs)
+            return src.move_to(self.abspath, perm=perm, dir_perm=dir_perm, **kwargs)
 
         # when src is a plain string, let the fs handle it
         # TODO: complain when src not local? forward to copy_to request depending on protocol?
@@ -343,7 +347,7 @@ class FileSystemDirectoryTarget(FileSystemTarget):
 
     open = None
 
-    def _child_args(self, path):
+    def _child_args(self, path, type):
         return (), {}
 
     def child(self, path, type=None, mktemp_pattern=False, **kwargs):
@@ -366,10 +370,12 @@ class FileSystemDirectoryTarget(FileSystemTarget):
             raise Exception("cannot guess type of non-existing path '{}'".format(path))
         elif self.fs.isdir(path):
             cls = self.__class__
+            type = "d"
         else:
             cls = self.file_class
+            type = "f"
 
-        args, _kwargs = self._child_args(path)
+        args, _kwargs = self._child_args(path, type)
         _kwargs.update(kwargs)
 
         return cls(unexpanded_path, *args, **_kwargs)

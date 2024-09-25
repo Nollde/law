@@ -95,7 +95,7 @@ class LocalFileSystem(FileSystem, shims.LocalFileSystem):
                 )
 
         # set the base
-        self.base = os.path.abspath(str(base))
+        self.base = os.path.abspath(self._unscheme(str(base)))
 
         super(LocalFileSystem, self).__init__(**kwargs)
 
@@ -492,8 +492,8 @@ class LocalFileTarget(FileSystemFileTarget, LocalTarget):
 
 class LocalDirectoryTarget(FileSystemDirectoryTarget, LocalTarget):
 
-    def _child_args(self, path):
-        args, kwargs = super(LocalDirectoryTarget, self)._child_args(path)
+    def _child_args(self, path, type):
+        args, kwargs = super(LocalDirectoryTarget, self)._child_args(path, type)
         kwargs["fs"] = self.fs
         return args, kwargs
 

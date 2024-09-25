@@ -369,12 +369,12 @@ def flag_to_bool(s, silent=False):
 
 
 @contextlib.contextmanager
-def empty_context():
+def empty_context(obj=None):
     """
     Yields an empty context that can be used in case of dynamically choosing context managers while
     maintaining code structure.
     """
-    yield
+    yield obj
 
 
 def common_task_params(task_instance, task_cls):
@@ -794,17 +794,32 @@ def range_join(numbers, to_str=False, include_end=False, sep=",", range_sep=":")
     return ranges
 
 
-def multi_match(name, patterns, mode=any, regex=False):
+def multi_match(name, patterns, mode=any, regex=None):
     """
     Compares *name* to multiple *patterns* and returns *True* in case of at least one match (*mode*
     = *any*, the default), or in case all patterns match (*mode* = *all*). Otherwise, *False* is
-    returned. When *regex* is *True*, *re.match* is used instead of *fnmatch.fnmatch*.
+    returned. When *regex* is *True*, *re.match* is used instead of *fnmatch.fnmatch*. When *None*,
+    the matching function is chosen per pattern: when starting with "^" and ending in "$" regex
+    matching is used, and fnmatch otherwise.
     """
     patterns = make_list(patterns)
-    if not regex:
-        return mode(fnmatch.fnmatch(name, pattern) for pattern in patterns)
-    else:
-        return mode(re.match(pattern, name) for pattern in patterns)
+
+    # generic matching functions with identical signature
+    match_func_fn = lambda pattern: fnmatch.fnmatch(name, pattern)
+    match_func_re = lambda pattern: bool(re.match(pattern, name))
+
+    # determine the matching function
+    match_func = match_func_fn
+    if regex is None:
+        match_func = lambda pattern: (
+            match_func_re(pattern)
+            if pattern.startswith("^") and pattern.endswith("$")
+            else match_func_fn(pattern)
+        )
+    elif regex:
+        match_func = match_func_re
+
+    return mode(match_func(pattern) for pattern in patterns)
 
 
 def is_iterable(obj):
@@ -1197,11 +1212,14 @@ def map_struct(func, struct, map_dict=True, map_list=True, map_tuple=False, map_
     return func(struct)
 
 
-def mask_struct(mask, struct, replace=no_value, convert_types=None):
+def mask_struct(mask, struct, replace=no_value, keep_missing=True, convert_types=None):
     """
     Masks a complex structured object *struct* with a *mask* and returns the remaining values. When
     *replace* is set, masked values are replaced with that value instead of being removed. The
     *mask* can have a complex structure as well.
+
+    In case an item in *struct* is not matched by a value in *mask*, the item is kept unless
+    *keep_missing* is *False*. When *keep_missing* is *True*, unmatched items are removed.
 
     *convert_types* can be a dictionary containing conversion functions mapped to types (or tuples)
     thereof that is applied to objects during the struct traversal if their types match.
@@ -1241,12 +1259,14 @@ def mask_struct(mask, struct, replace=no_value, convert_types=None):
         new_struct = []
         for i, val in enumerate(struct):
             if i >= len(mask):
-                new_struct.append(val)
+                if keep_missing:
+                    new_struct.append(val)
             else:
                 repl = replace
                 if isinstance(replace, (list, tuple)) and len(replace) > i:
                     repl = replace[i]
-                val = mask_struct(mask[i], val, replace=repl, convert_types=convert_types)
+                val = mask_struct(mask[i], val, replace=repl, keep_missing=keep_missing,
+                    convert_types=convert_types)
                 if val != no_value:
                     new_struct.append(val)
 
@@ -1257,12 +1277,14 @@ def mask_struct(mask, struct, replace=no_value, convert_types=None):
         new_struct = struct.__class__()
         for key, val in six.iteritems(struct):
             if key not in mask:
-                new_struct[key] = val
+                if keep_missing:
+                    new_struct[key] = val
             else:
                 repl = replace
                 if isinstance(replace, dict) and key in replace:
                     repl = replace[key]
-                val = mask_struct(mask[key], val, replace=repl, convert_types=convert_types)
+                val = mask_struct(mask[key], val, replace=repl, keep_missing=keep_missing,
+                    convert_types=convert_types)
                 if val != no_value:
                     new_struct[key] = val
         return new_struct or replace
